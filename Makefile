@@ -10,6 +10,7 @@ DIR     ?= ./recordings
 OUTPUT  ?= ./output
 CONFIG  ?= config.yaml
 SPEAKERS ?=
+GAP      ?= 0.5
 
 _SPEAKERS_FLAG := $(if $(SPEAKERS),--speakers $(SPEAKERS),)
 _NO_MSDD_FLAG  := $(if $(NO_MSDD),--no-msdd,)
@@ -31,6 +32,7 @@ help:
 	@echo "  OUTPUT=./results        Custom output directory"
 	@echo "  CONFIG=config.yaml      Custom config file"
 	@echo "  NO_MSDD=1               Skip MSDD (clustering-only, faster)"
+	@echo "  GAP=0.5                 Max pause (sec) to merge same-speaker turns (default: 0.5)"
 
 # ----------------------------------------------------------------------------
 # Virtual environment
@@ -59,10 +61,10 @@ setup: install-sys install
 # ----------------------------------------------------------------------------
 
 run: venv
-	$(PYTHON) diarize.py $(FILE) $(_SPEAKERS_FLAG) --output $(OUTPUT) --config $(CONFIG) $(_NO_MSDD_FLAG)
+	$(PYTHON) diarize.py $(FILE) $(_SPEAKERS_FLAG) --output $(OUTPUT) --config $(CONFIG) --gap $(GAP) $(_NO_MSDD_FLAG)
 
 run-batch: venv
-	$(PYTHON) diarize.py $(DIR) $(_SPEAKERS_FLAG) --output $(OUTPUT) --config $(CONFIG) $(_NO_MSDD_FLAG)
+	$(PYTHON) diarize.py $(DIR) $(_SPEAKERS_FLAG) --output $(OUTPUT) --config $(CONFIG) --gap $(GAP) $(_NO_MSDD_FLAG)
 
 # ----------------------------------------------------------------------------
 # Maintenance

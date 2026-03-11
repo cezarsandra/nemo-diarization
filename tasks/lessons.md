@@ -1,6 +1,8 @@
 # Lessons Learned
 
 ## Session: Bug Fix (2026-03-11)
+- Always pass `out_dir` as an **absolute path** to NeMo (`output_dir.resolve()`). During long tqdm loops (audio dataloader workers), the CWD can shift, causing relative paths like `output/speaker_outputs/subsegments_scale3.json` to become unresolvable mid-run with `FileNotFoundError` even though the file was created correctly.
+
 - NeMo hard-accesses (no `.get()`) many config keys — any missing one raises `ConfigAttributeError`. Full list of required top-level diarizer keys: `oracle_vad`, `collar`, `ignore_overlap`; under `vad`: `external_vad_manifest`; under `msdd_model.parameters`: `infer_batch_size`, `seq_eval_mode`, `split_infer`. Run this grep to audit any version: `grep -n "\._diarizer_params\.[a-z]" clustering_diarizer.py msdd_models.py | grep -v "\.get("`.
 - Fix config gaps incrementally by running, hitting the next `ConfigAttributeError`, grepping source, adding key — but it's better to grep all hard accesses upfront in one pass.
 

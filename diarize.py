@@ -113,6 +113,21 @@ def parse_rttm(rttm_path: Path) -> list:
     return sorted(segments, key=lambda s: s["start"])
 
 
+def merge_segments(segments: list, gap_threshold: float = 0.5) -> list:
+    """Merge consecutive segments from the same speaker separated by <= gap_threshold seconds."""
+    if not segments:
+        return []
+    merged = [dict(segments[0])]
+    for seg in segments[1:]:
+        prev = merged[-1]
+        if seg["speaker"] == prev["speaker"] and (seg["start"] - prev["end"]) <= gap_threshold:
+            prev["end"] = seg["end"]
+            prev["duration"] = prev["end"] - prev["start"]
+        else:
+            merged.append(dict(seg))
+    return merged
+
+
 def compute_metrics(segments: list, audio_duration: float) -> dict:
     unique_speakers = len(set(s["speaker"] for s in segments))
     total_speech = sum(s["duration"] for s in segments)
@@ -150,6 +165,7 @@ def process_single(
     config_path: Path,
     output_dir: Path,
     no_msdd: bool,
+    gap: float = 0.5,
 ) -> Optional[dict]:
     """Run diarization on one file. Returns metrics dict or None on failure."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -164,7 +180,9 @@ def process_single(
     duration = get_audio_duration(audio_path)
 
     cfg = OmegaConf.load(config_path)
-    cfg.diarizer.out_dir = str(output_dir)
+    # Use absolute path — NeMo's tqdm dataloader can change CWD during processing,
+    # which breaks relative paths when reopening subsegment manifest files mid-run.
+    cfg.diarizer.out_dir = str(output_dir.resolve())
     if num_speakers is not None:
         cfg.diarizer.clustering.parameters.oracle_num_speakers = True
 
@@ -179,12 +197,13 @@ def process_single(
         os.unlink(tmp.name)
 
     # Stem is taken from the audio file NeMo actually saw
-    rttm_path = output_dir / RTTM_SUBDIR / f"{audio_path.stem}.rttm"
+    rttm_path = output_dir.resolve() / RTTM_SUBDIR / f"{audio_path.stem}.rttm"
     if not rttm_path.exists():
         print(f"  Warning: RTTM not found at {rttm_path}", file=sys.stderr)
         return None
 
-    segments = parse_rttm(rttm_path)
+    raw_segments = parse_rttm(rttm_path)
+    segments = merge_segments(raw_segments, gap_threshold=gap)
     metrics = compute_metrics(segments, duration)
     print_results(segments)
     print_metrics(metrics)
@@ -214,6 +233,8 @@ def main() -> None:
     parser.add_argument("--output", default="./output", help="Output directory (default: ./output)")
     parser.add_argument("--config", default="config.yaml", help="Path to config YAML (default: config.yaml)")
     parser.add_argument("--no-msdd", action="store_true", help="Clustering-only diarizer (skip MSDD)")
+    parser.add_argument("--gap", type=float, default=0.5,
+                        help="Max pause (sec) between same-speaker turns to merge (default: 0.5)")
     args = parser.parse_args()
 
     if args.speakers is not None and args.speakers < 1:
@@ -254,7 +275,7 @@ def main() -> None:
             print(f"Speakers: {args.speakers or 'auto-detect'}")
             print(f"Output:   {file_out}")
 
-        metrics = process_single(audio_path, args.speakers, config_path, file_out, args.no_msdd)
+        metrics = process_single(audio_path, args.speakers, config_path, file_out, args.no_msdd, args.gap)
         if batch and metrics:
             summary.append((audio_path.name, metrics))
 
