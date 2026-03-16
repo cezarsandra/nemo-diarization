@@ -1,0 +1,10 @@
+.venv/
+output/
+__pycache__/
+*.pyc
+*.rttm
+*.wav
+*.mp3
+.git/
+tasks/
+recordings/

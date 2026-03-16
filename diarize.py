@@ -86,7 +86,10 @@ def load_nemo_model(cfg, no_msdd: bool):
     except ImportError:
         print("Error: NeMo not installed. Run: pip install nemo_toolkit[asr]", file=sys.stderr)
         sys.exit(1)
-    return ClusteringDiarizer(cfg=cfg) if no_msdd else NeuralDiarizer(cfg=cfg)
+    model = ClusteringDiarizer(cfg=cfg) if no_msdd else NeuralDiarizer(cfg=cfg)
+    # MSDD checkpoint loads in FP16; force FP32 for CPU and Pascal GPUs which
+    # don't mix float/half without explicit cast.
+    return model.float()
 
 
 # ---------------------------------------------------------------------------

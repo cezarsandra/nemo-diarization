@@ -3,3 +3,5 @@ packaging
 nemo_toolkit[asr]
 omegaconf
 soundfile
+runpod
+google-cloud-storage

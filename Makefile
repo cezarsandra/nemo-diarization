@@ -1,17 +1,18 @@
-.PHONY: help venv install install-sys setup run run-batch lint clean
+.PHONY: help venv install install-sys setup run run-batch lint clean docker-build docker-test
 
 VENV    := .venv
 PYTHON  := $(VENV)/bin/python
 PIP     := $(VENV)/bin/pip
 
 # Defaults (override on command line: make run FILE=my.wav SPEAKERS=2)
+IMAGE   ?= nemo-diarization
 FILE    ?= audio.wav
 DIR     ?= ./recordings
 OUTPUT  ?= ./output
 CONFIG  ?= config.yaml
 SPEAKERS ?=
-GAP      ?= 0.5
-MIN_SEG  ?= 0.0
+GAP      ?= 5
+MIN_SEG  ?= 10
 
 _SPEAKERS_FLAG := $(if $(SPEAKERS),--speakers $(SPEAKERS),)
 _NO_MSDD_FLAG  := $(if $(NO_MSDD),--no-msdd,)
@@ -36,6 +37,12 @@ help:
 	@echo "  NO_MSDD=1               Skip MSDD (clustering-only, faster)"
 	@echo "  GAP=0.5                 Max pause (sec) to merge same-speaker turns (default: 0.5)"
 	@echo "  MIN_SEG=0.5             Drop segments shorter than this (sec) before merging (default: disabled)"
+	@echo ""
+	@echo "Docker targets:"
+	@echo "  make docker-build       Build Docker image (IMAGE=nemo-diarization)"
+	@echo "  make docker-test        Test handler locally with a GCS audio file"
+	@echo "    Required: GCS_BUCKET=my-bucket GCS_AUDIO_PATH=recordings/audio.mp3"
+	@echo "    Required: GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json"
 
 # ----------------------------------------------------------------------------
 # Virtual environment
@@ -83,3 +90,22 @@ clean:
 clean-venv:
 	rm -rf $(VENV)
 	@echo "Removed $(VENV)"
+
+# ----------------------------------------------------------------------------
+# Docker
+# ----------------------------------------------------------------------------
+
+GCS_BUCKET           ?=
+GCS_AUDIO_PATH       ?=
+GOOGLE_APPLICATION_CREDENTIALS ?=
+
+docker-build:
+	docker build -t $(IMAGE) .
+
+docker-test:
+	docker run --rm --gpus all \
+		-e GCS_BUCKET=$(GCS_BUCKET) \
+		-e GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcs-key.json \
+		-v $(GOOGLE_APPLICATION_CREDENTIALS):/run/secrets/gcs-key.json:ro \
+		$(IMAGE) \
+		python3 handler.py --test_input '{"input": {"gcs_audio_path": "$(GCS_AUDIO_PATH)"}}'
