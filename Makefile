@@ -106,7 +106,7 @@ docker-build:
 
 # Test handler with a LOCAL file (no GCS needed — mounts the file directly)
 docker-test-local:
-	docker run --rm --gpus all \
+	docker run --rm --gpus all --shm-size=1g \
 		-v $(abspath $(FILE)):/tmp/test-audio$(suffix $(FILE)):ro \
 		-e GCS_BUCKET=LOCAL_TEST \
 		$(IMAGE) \
@@ -119,7 +119,7 @@ print('metrics:', m)"
 
 # Test handler with GCS (full end-to-end)
 docker-test:
-	docker run --rm --gpus all \
+	docker run --rm --gpus all --shm-size=1g \
 		-e GCS_BUCKET=$(GCS_BUCKET) \
 		-e GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcs-key.json \
 		-v $(GOOGLE_APPLICATION_CREDENTIALS):/run/secrets/gcs-key.json:ro \
