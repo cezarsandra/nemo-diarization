@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import torch
 from pathlib import Path
 from typing import Optional
 
@@ -80,39 +81,31 @@ def build_manifest(audio_path: Path, num_speakers: Optional[int], manifest_path:
         f.write(json.dumps(entry) + "\n")
 
 
-def _patch_conv2d_dtype() -> None:
-    """Patch Conv2d to silently align bias/weight dtype to the input dtype.
-
-    NeMo's MSDD telephonic checkpoint stores conv weights in FP16.  On CUDA
-    (especially Pascal GPUs) the embedding inputs are FP32, causing:
-      RuntimeError: Input type (float) and bias type (c10::Half) should be same
-    Patching _conv_forward is the only reliable fix when model.float() cannot
-    reach the weights (NeuralDiarizer wraps them behind non-Module attributes).
-    """
-    import torch
-    import torch.nn.functional as F
-
-    original = torch.nn.Conv2d._conv_forward
-
-    def _conv_forward_fp_safe(self, input, weight, bias):
-        if weight.dtype != input.dtype:
-            weight = weight.to(input.dtype)
-        if bias is not None and bias.dtype != input.dtype:
-            bias = bias.to(input.dtype)
-        return original(self, input, weight, bias)
-
-    torch.nn.Conv2d._conv_forward = _conv_forward_fp_safe
-
-
 def load_nemo_model(cfg, no_msdd: bool):
     try:
         from nemo.collections.asr.models import ClusteringDiarizer, NeuralDiarizer
     except ImportError:
         print("Error: NeMo not installed. Run: pip install nemo_toolkit[asr]", file=sys.stderr)
         sys.exit(1)
+    model = ClusteringDiarizer(cfg=cfg) if no_msdd else NeuralDiarizer(cfg=cfg)
     if not no_msdd:
-        _patch_conv2d_dtype()
-    return ClusteringDiarizer(cfg=cfg) if no_msdd else NeuralDiarizer(cfg=cfg)
+        # NeMo loads the MSDD model on CUDA but the pre-computed speaker
+        # embeddings (loaded from pickle) arrive on CPU.  Every module in the
+        # MSDD pipeline (Conv2d, Linear, LSTM, …) then sees a device mismatch
+        # under NeMo's inner `with autocast():` context, which also turns the
+        # CUDA weights to float16 while the CPU input stays float32.
+        # Fix: register a forward pre-hook on the MSDD module that moves every
+        # input tensor to the model's device before each forward call.
+        import torch
+
+        def _move_inputs_to_device(module, args, kwargs):
+            device = next(module.parameters()).device
+            new_args = tuple(a.to(device) if isinstance(a, torch.Tensor) else a for a in args)
+            new_kwargs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in kwargs.items()}
+            return new_args, new_kwargs
+
+        model.msdd_model.msdd.register_forward_pre_hook(_move_inputs_to_device, with_kwargs=True)
+    return model
 
 
 # ---------------------------------------------------------------------------
@@ -225,13 +218,8 @@ def process_single(
         build_manifest(audio_path, num_speakers, tmp.name)
         tmp.close()
         cfg.diarizer.manifest_filepath = tmp.name
-        import torch
         model = load_nemo_model(cfg, no_msdd)
-        # Disable autocast: NeMo enables CUDA AMP by default, which casts conv
-        # weights to FP16 while pre-computed pickle embeddings stay FP32 →
-        # dtype mismatch on Pascal GPUs. Running in full FP32 avoids this.
-        with torch.amp.autocast("cuda", enabled=False):
-            model.diarize()
+        model.diarize()
     finally:
         os.unlink(tmp.name)
 
