@@ -1,4 +1,4 @@
-.PHONY: help venv install install-sys setup run run-batch lint clean docker-build docker-test
+.PHONY: help venv install install-sys setup run run-batch lint clean docker-build docker-test docker-test-local
 
 VENV    := .venv
 PYTHON  := $(VENV)/bin/python
@@ -39,8 +39,10 @@ help:
 	@echo "  MIN_SEG=0.5             Drop segments shorter than this (sec) before merging (default: disabled)"
 	@echo ""
 	@echo "Docker targets:"
-	@echo "  make docker-build       Build Docker image (IMAGE=nemo-diarization)"
-	@echo "  make docker-test        Test handler locally with a GCS audio file"
+	@echo "  make docker-build         Build Docker image (IMAGE=nemo-diarization)"
+	@echo "  make docker-test-local    Test handler inside Docker with a LOCAL audio file"
+	@echo "    Required: FILE=audio.mp3"
+	@echo "  make docker-test          Test handler inside Docker with a GCS audio file"
 	@echo "    Required: GCS_BUCKET=my-bucket GCS_AUDIO_PATH=recordings/audio.mp3"
 	@echo "    Required: GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json"
 
@@ -102,6 +104,20 @@ GOOGLE_APPLICATION_CREDENTIALS ?=
 docker-build:
 	docker build -t $(IMAGE) .
 
+# Test handler with a LOCAL file (no GCS needed — mounts the file directly)
+docker-test-local:
+	docker run --rm --gpus all \
+		-v $(abspath $(FILE)):/tmp/test-audio$(suffix $(FILE)):ro \
+		-e GCS_BUCKET=LOCAL_TEST \
+		$(IMAGE) \
+		python3 -c "\
+import sys; sys.path.insert(0, '/app'); \
+from pathlib import Path; \
+from diarize import process_single; \
+m = process_single(Path('/tmp/test-audio$(suffix $(FILE))'), None, Path('/app/config.yaml'), Path('/tmp/out'), False); \
+print('metrics:', m)"
+
+# Test handler with GCS (full end-to-end)
 docker-test:
 	docker run --rm --gpus all \
 		-e GCS_BUCKET=$(GCS_BUCKET) \
