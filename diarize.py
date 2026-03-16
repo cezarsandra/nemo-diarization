@@ -113,6 +113,13 @@ def parse_rttm(rttm_path: Path) -> list:
     return sorted(segments, key=lambda s: s["start"])
 
 
+def filter_short_segments(segments: list, min_duration: float) -> list:
+    """Drop segments shorter than min_duration seconds."""
+    if min_duration <= 0:
+        return segments
+    return [s for s in segments if s["duration"] >= min_duration]
+
+
 def merge_segments(segments: list, gap_threshold: float = 0.5) -> list:
     """Merge consecutive segments from the same speaker separated by <= gap_threshold seconds."""
     if not segments:
@@ -166,6 +173,7 @@ def process_single(
     output_dir: Path,
     no_msdd: bool,
     gap: float = 0.5,
+    min_seg: float = 0.0,
 ) -> Optional[dict]:
     """Run diarization on one file. Returns metrics dict or None on failure."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -203,7 +211,8 @@ def process_single(
         return None
 
     raw_segments = parse_rttm(rttm_path)
-    segments = merge_segments(raw_segments, gap_threshold=gap)
+    filtered = filter_short_segments(raw_segments, min_duration=min_seg)
+    segments = merge_segments(filtered, gap_threshold=gap)
     metrics = compute_metrics(segments, duration)
     print_results(segments)
     print_metrics(metrics)
@@ -233,8 +242,10 @@ def main() -> None:
     parser.add_argument("--output", default="./output", help="Output directory (default: ./output)")
     parser.add_argument("--config", default="config.yaml", help="Path to config YAML (default: config.yaml)")
     parser.add_argument("--no-msdd", action="store_true", help="Clustering-only diarizer (skip MSDD)")
-    parser.add_argument("--gap", type=float, default=0.5,
-                        help="Max pause (sec) between same-speaker turns to merge (default: 0.5)")
+    parser.add_argument("--gap", type=float, default=None,
+                        help="Max pause (sec) between same-speaker turns to merge (overrides config)")
+    parser.add_argument("--min-seg", type=float, default=None,
+                        help="Drop segments shorter than this duration in seconds (overrides config)")
     args = parser.parse_args()
 
     if args.speakers is not None and args.speakers < 1:
@@ -243,6 +254,11 @@ def main() -> None:
     config_path = Path(args.config)
     if not config_path.exists():
         parser.error(f"config file not found: {config_path}")
+
+    # Load postprocessing defaults from config, allow CLI override
+    cfg_pp = OmegaConf.load(config_path).get("postprocessing", {})
+    gap = args.gap if args.gap is not None else cfg_pp.get("gap", 0.5)
+    min_seg = args.min_seg if args.min_seg is not None else cfg_pp.get("min_seg", 0.0)
 
     output_dir = Path(args.output)
 
@@ -275,7 +291,7 @@ def main() -> None:
             print(f"Speakers: {args.speakers or 'auto-detect'}")
             print(f"Output:   {file_out}")
 
-        metrics = process_single(audio_path, args.speakers, config_path, file_out, args.no_msdd, args.gap)
+        metrics = process_single(audio_path, args.speakers, config_path, file_out, args.no_msdd, gap, min_seg)
         if batch and metrics:
             summary.append((audio_path.name, metrics))
 

@@ -59,3 +59,7 @@ diarizer:
       use_adaptive_thres: True
       max_overlap_spks: 2
       num_workers: 1
+
+postprocessing:
+  gap: 5        # max pause (sec) between same-speaker turns to merge
+  min_seg: 10    # drop segments shorter than this (sec); 0 = disabled
