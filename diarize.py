@@ -87,9 +87,12 @@ def load_nemo_model(cfg, no_msdd: bool):
         print("Error: NeMo not installed. Run: pip install nemo_toolkit[asr]", file=sys.stderr)
         sys.exit(1)
     model = ClusteringDiarizer(cfg=cfg) if no_msdd else NeuralDiarizer(cfg=cfg)
-    # MSDD checkpoint loads in FP16; force FP32 for CPU and Pascal GPUs which
-    # don't mix float/half without explicit cast.
-    return model.float()
+    # NeuralDiarizer is not an nn.Module — model.float() is a no-op on it.
+    # Cast the inner EncDecDiarLabelModel (which IS an nn.Module) to FP32 so
+    # its FP16 checkpoint weights match the float32 input tensors at inference.
+    if not no_msdd and hasattr(model, 'msdd_model'):
+        model.msdd_model.float()
+    return model
 
 
 # ---------------------------------------------------------------------------
