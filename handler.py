@@ -37,16 +37,18 @@ from diarize import (
 # GCS credentials bootstrap (support JSON string env var for RunPod secrets)
 # ---------------------------------------------------------------------------
 
-_CREDS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+_CREDS_JSON = (os.environ.get("GOOGLE_CREDENTIALS_JSON") or "").strip()
 if _CREDS_JSON and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-    import base64
-    # Support both raw JSON and base64-encoded JSON
+    import base64, json as _json
+    # Try base64 decode first, fall back to raw JSON
     try:
-        decoded = base64.b64decode(_CREDS_JSON).decode("utf-8")
-        import json as _json; _json.loads(decoded)  # validate it's JSON
+        decoded = base64.b64decode(_CREDS_JSON, validate=True).decode("utf-8").strip()
+        _json.loads(decoded)  # validate it decodes to valid JSON
         _CREDS_JSON = decoded
     except Exception:
         pass  # already raw JSON
+    if not _CREDS_JSON:
+        raise RuntimeError("GOOGLE_CREDENTIALS_JSON is set but empty after decoding — check the value in RunPod secrets")
     _tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
     _tmp.write(_CREDS_JSON)
     _tmp.close()
