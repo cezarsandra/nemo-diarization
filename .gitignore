@@ -3,3 +3,6 @@ output/
 __pycache__/
 *.pyc
 *.rttm
+*.mp3
+*.wav
+*.json

@@ -39,6 +39,14 @@ from diarize import (
 
 _CREDS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON")
 if _CREDS_JSON and not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+    import base64
+    # Support both raw JSON and base64-encoded JSON
+    try:
+        decoded = base64.b64decode(_CREDS_JSON).decode("utf-8")
+        import json as _json; _json.loads(decoded)  # validate it's JSON
+        _CREDS_JSON = decoded
+    except Exception:
+        pass  # already raw JSON
     _tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
     _tmp.write(_CREDS_JSON)
     _tmp.close()
