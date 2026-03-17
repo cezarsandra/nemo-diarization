@@ -84,6 +84,11 @@ def handler(job):
     speakers = inp.get("speakers", None)
     no_msdd: bool = inp.get("no_msdd", False)
 
+    # Post-processing params — input overrides config.yaml defaults
+    cfg_pp = OmegaConf.load(_CONFIG_PATH).get("postprocessing", {})
+    gap = float(inp.get("gap", cfg_pp.get("gap", 0.5)))
+    min_seg = float(inp.get("min_seg", cfg_pp.get("min_seg", 0.0)))
+
     if not GCS_BUCKET:
         return {"error": "GCS_BUCKET environment variable not set"}
 
@@ -104,6 +109,8 @@ def handler(job):
             config_path=_CONFIG_PATH,
             output_dir=output_dir,
             no_msdd=no_msdd,
+            gap=gap,
+            min_seg=min_seg,
         )
 
         if metrics is None:
@@ -122,9 +129,6 @@ def handler(job):
         print(f"Uploaded RTTM → {rttm_uri}")
 
         # 5 — Re-parse RTTM to return segments in response
-        cfg_pp = OmegaConf.load(_CONFIG_PATH).get("postprocessing", {})
-        gap = float(cfg_pp.get("gap", 0.5))
-        min_seg = float(cfg_pp.get("min_seg", 0.0))
         raw = parse_rttm(rttm_local)
         segments = merge_segments(filter_short_segments(raw, min_seg), gap)
 
