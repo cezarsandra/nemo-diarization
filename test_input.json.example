@@ -1,0 +1,8 @@
+{
+  "input": {
+    "gcs_audio_path": "recordings/audio.mp3",
+    "gcs_output_prefix": "results/",
+    "speakers": null,
+    "no_msdd": false
+  }
+}

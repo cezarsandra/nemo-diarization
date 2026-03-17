@@ -1,4 +1,4 @@
-.PHONY: help venv install install-sys setup run run-batch lint clean docker-build docker-test docker-test-local
+.PHONY: help venv install install-sys setup run run-batch lint clean docker-build docker-test docker-test-local test-handler
 
 VENV    := .venv
 PYTHON  := $(VENV)/bin/python
@@ -45,6 +45,11 @@ help:
 	@echo "  make docker-test          Test handler inside Docker with a GCS audio file"
 	@echo "    Required: GCS_BUCKET=my-bucket GCS_AUDIO_PATH=recordings/audio.mp3"
 	@echo "    Required: GOOGLE_APPLICATION_CREDENTIALS=/path/to/key.json"
+	@echo ""
+	@echo "Local handler test (fara Docker):"
+	@echo "  make test-handler         Simuleaza un job RunPod local cu GCS real"
+	@echo "    Setup: cp .env.example .env && cp test_input.json.example test_input.json"
+	@echo "    Editeaza .env cu bucket + credentials, test_input.json cu calea audio"
 
 # ----------------------------------------------------------------------------
 # Virtual environment
@@ -116,6 +121,12 @@ from pathlib import Path; \
 from diarize import process_single; \
 m = process_single(Path('/tmp/test-audio$(suffix $(FILE))'), None, Path('/app/config.yaml'), Path('/tmp/out'), False); \
 print('metrics:', m)"
+
+# Test handler locally (full end-to-end cu GCS real, fara Docker)
+test-handler: venv
+	@test -f .env || (echo "ERROR: .env not found. Ruleaza: cp .env.example .env" && exit 1)
+	@test -f test_input.json || (echo "ERROR: test_input.json not found. Ruleaza: cp test_input.json.example test_input.json" && exit 1)
+	$(PYTHON) test_handler.py
 
 # Test handler with GCS (full end-to-end)
 docker-test:
