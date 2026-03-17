@@ -99,19 +99,25 @@ def handler(job):
         audio_filename = Path(gcs_audio_path).name
         local_audio = tmpdir / audio_filename
         print(f"Downloading gs://{GCS_BUCKET}/{gcs_audio_path} ...")
-        _download(gcs_audio_path, str(local_audio))
+        try:
+            _download(gcs_audio_path, str(local_audio))
+        except Exception as e:
+            return {"error": f"Failed to download audio from GCS: {e}"}
 
         # 2 — Run diarization
         output_dir = tmpdir / "output"
-        metrics = process_single(
-            audio_path=local_audio,
-            num_speakers=speakers,
-            config_path=_CONFIG_PATH,
-            output_dir=output_dir,
-            no_msdd=no_msdd,
-            gap=gap,
-            min_seg=min_seg,
-        )
+        try:
+            metrics = process_single(
+                audio_path=local_audio,
+                num_speakers=speakers,
+                config_path=_CONFIG_PATH,
+                output_dir=output_dir,
+                no_msdd=no_msdd,
+                gap=gap,
+                min_seg=min_seg,
+            )
+        except Exception as e:
+            return {"error": f"Diarization failed: {e}"}
 
         if metrics is None:
             return {"error": "Diarization produced no output"}
@@ -122,20 +128,24 @@ def handler(job):
             return {"error": "RTTM file missing after diarization"}
         rttm_local = rttm_files[0]
 
-        # 4 — Upload RTTM to GCS
-        stem = Path(gcs_audio_path).stem
-        gcs_rttm_path = f"{gcs_output_prefix}/{stem}.rttm"
-        rttm_uri = _upload(gcs_rttm_path, str(rttm_local))
-        print(f"Uploaded RTTM → {rttm_uri}")
-
-        # 5 — Re-parse RTTM to return segments in response
+        # 4 — Build processed segments JSON and upload to GCS
+        import json as _json
         raw = parse_rttm(rttm_local)
         segments = merge_segments(filter_short_segments(raw, min_seg), gap)
+
+        stem = Path(gcs_audio_path).stem
+        result_payload = {"segments": segments, "metrics": metrics}
+        json_local = tmpdir / f"{stem}.json"
+        json_local.write_text(_json.dumps(result_payload, indent=2, default=str))
+
+        gcs_json_path = f"{gcs_output_prefix}/{stem}.json"
+        json_uri = _upload(gcs_json_path, str(json_local))
+        print(f"Uploaded JSON → {json_uri}")
 
         return {
             "segments": segments,
             "metrics": metrics,
-            "rttm_gcs_uri": rttm_uri,
+            "gcs_uri": json_uri,
         }
 
 

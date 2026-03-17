@@ -276,8 +276,8 @@ def main() -> None:
 
     # Load postprocessing defaults from config, allow CLI override
     cfg_pp = OmegaConf.load(config_path).get("postprocessing", {})
-    gap = args.gap if args.gap is not None else cfg_pp.get("gap", 0.5)
-    min_seg = args.min_seg if args.min_seg is not None else cfg_pp.get("min_seg", 0.0)
+    gap = args.gap if args.gap is not None else float(cfg_pp.get("gap", 5.0))
+    min_seg = args.min_seg if args.min_seg is not None else float(cfg_pp.get("min_seg", 0.5))
 
     output_dir = Path(args.output)
 
