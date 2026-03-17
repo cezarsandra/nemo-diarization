@@ -4,7 +4,7 @@
     "gcs_output_prefix": "results/",
     "speakers": null,
     "no_msdd": false,
-    "gap": 0.5,
-    "min_seg": 0.0
+    "gap": 5,
+    "min_seg": 0.5
   }
 }
