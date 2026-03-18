@@ -63,3 +63,8 @@ diarizer:
 postprocessing:
   gap: 5        # max pause (sec) between same-speaker turns to merge
   min_seg: 10    # drop segments shorter than this (sec); 0 = disabled
+
+speaker_identification:
+  signatures_prefix: signatures/    # GCS prefix where .npy embeddings are stored
+  unknown_prefix: unknown_samples/  # GCS prefix for 30-sec review clips of unknown speakers
+  similarity_threshold: 0.75        # cosine similarity threshold for a match (0-1)

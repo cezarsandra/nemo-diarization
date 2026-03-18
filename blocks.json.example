@@ -1,0 +1,12 @@
+[
+  {
+    "start": "01:29:19",
+    "end": "01:41:10",
+    "merge": ["speaker_0", "speaker_2"]
+  },
+  {
+    "start": "00:00:00",
+    "end": "00:05:00",
+    "merge": ["speaker_1", "speaker_3"]
+  }
+]

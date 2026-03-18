@@ -232,6 +232,96 @@ cat key.json | base64 -w 0
 
 The full result is also saved as JSON to GCS at the path in `gcs_uri`.
 
+---
+
+## Speaker Identification
+
+Identify known speakers by matching diarized voice clusters against stored voice signatures.
+
+### How it works
+
+1. **Signatures** are `.npy` files stored in GCS under `signatures/` — filename = speaker name
+2. At diarization time, if `identify_speakers: true`, each speaker cluster is compared against all signatures via cosine similarity
+3. If similarity ≥ threshold → `speaker_X` is replaced with the real name
+4. If no match → a 30-second audio sample is saved to `unknown_samples/` in GCS for review and enrollment
+
+### Enroll a speaker
+
+Upload audio clips of the person to GCS, then call the enroll endpoint:
+
+```json
+{
+  "input": {
+    "mode": "enroll",
+    "speaker_name": "Ion Popescu",
+    "gcs_audio_paths": [
+      "samples/ion_clip1.mp3",
+      "samples/ion_clip2.mp3"
+    ]
+  }
+}
+```
+
+Response:
+```json
+{
+  "enrolled": "Ion Popescu",
+  "clips_used": 2,
+  "signature_uri": "gs://my-bucket/signatures/Ion Popescu.npy"
+}
+```
+
+Multiple clips → embeddings are averaged for a more stable signature. If a signature already exists, the new embedding is averaged with the existing one (incremental learning).
+
+### Diarize with identification
+
+```json
+{
+  "input": {
+    "gcs_audio_path": "recordings/audio.mp3",
+    "identify_speakers": true,
+    "similarity_threshold": 0.75
+  }
+}
+```
+
+Response includes real names where matched and unknown sample links:
+```json
+{
+  "segments": [
+    {"start": 0.46, "end": 60.17, "speaker": "Ion Popescu"},
+    {"start": 120.0, "end": 180.0, "speaker": "speaker_1"}
+  ],
+  "unknown_speakers": {
+    "speaker_1": "gs://my-bucket/unknown_samples/audio_speaker_1.wav"
+  },
+  "metrics": {...},
+  "gcs_uri": "gs://my-bucket/results/audio.json"
+}
+```
+
+Listen to `unknown_speakers` samples and enroll them to improve future runs.
+
+### GCS structure
+
+```
+signatures/Ion Popescu.npy       ← voice signature (numpy float32 vector)
+signatures/Maria Ionescu.npy
+unknown_samples/audio_speaker_1.wav   ← 30-sec review clip
+results/audio.json               ← diarization output
+```
+
+### Tune in config.yaml
+
+```yaml
+speaker_identification:
+  signatures_prefix: signatures/
+  unknown_prefix: unknown_samples/
+  similarity_threshold: 0.75    # lower = more permissive matching
+```
+
+---
+
 ### GCS Service Account setup
 
 1. **Google Cloud Console** → **IAM & Admin** → **Service Accounts**

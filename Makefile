@@ -1,4 +1,4 @@
-.PHONY: help venv install install-sys setup run run-batch lint clean docker-build docker-test docker-test-local test-handler
+.PHONY: help venv install install-sys setup run run-batch lint clean docker-build docker-test docker-test-local test-handler postprocess
 
 VENV    := .venv
 PYTHON  := $(VENV)/bin/python
@@ -37,6 +37,11 @@ help:
 	@echo "  NO_MSDD=1               Skip MSDD (clustering-only, faster)"
 	@echo "  GAP=0.5                 Max pause (sec) to merge same-speaker turns (default: 0.5)"
 	@echo "  MIN_SEG=0.5             Drop segments shorter than this (sec) before merging (default: disabled)"
+	@echo "  AUDIO=audio.mp3         Original audio file (required for CONSOLIDATE / SIGNATURES)"
+	@echo "  CONSOLIDATE=0.85        Auto-merge speaker clusters with similarity >= threshold"
+	@echo "  SIGNATURES=./sigs/      Folder (local or gs://bucket/prefix/) with .npy signatures"
+	@echo "  THRESHOLD=0.75          Cosine similarity threshold for signature matching"
+	@echo "  DEVICE=cuda             Torch device for TitaNet (default: cpu)"
 	@echo ""
 	@echo "Docker targets:"
 	@echo "  make docker-build         Build Docker image (IMAGE=nemo-diarization)"
@@ -76,6 +81,30 @@ setup: install-sys install
 # ----------------------------------------------------------------------------
 # Run
 # ----------------------------------------------------------------------------
+
+RTTM        ?=
+BLOCKS      ?=
+AUDIO       ?=
+CONSOLIDATE ?=
+SIGNATURES  ?=
+THRESHOLD   ?= 0.75
+DEVICE      ?= cpu
+_BLOCKS_FLAG      := $(if $(BLOCKS),--blocks $(BLOCKS),)
+_AUDIO_FLAG       := $(if $(AUDIO),--audio $(AUDIO),)
+_CONSOLIDATE_FLAG := $(if $(CONSOLIDATE),--consolidate $(CONSOLIDATE),)
+_SIGNATURES_FLAG  := $(if $(SIGNATURES),--signatures $(SIGNATURES),)
+
+postprocess: venv
+	@test -n "$(RTTM)" || (echo "ERROR: RTTM=path/to/file.rttm is required" && exit 1)
+	$(PYTHON) postprocess.py $(RTTM) \
+		$(_BLOCKS_FLAG) \
+		$(_AUDIO_FLAG) \
+		$(_CONSOLIDATE_FLAG) \
+		$(_SIGNATURES_FLAG) \
+		$(if $(SIGNATURES),--threshold $(THRESHOLD),) \
+		--device $(DEVICE) \
+		--gap $(GAP) \
+		--min-seg $(MIN_SEG)
 
 run: venv
 	$(PYTHON) diarize.py $(FILE) $(_SPEAKERS_FLAG) --output $(OUTPUT) --config $(CONFIG) --gap $(GAP) $(_NO_MSDD_FLAG) $(_MIN_SEG_FLAG)

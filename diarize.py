@@ -182,6 +182,127 @@ def print_metrics(metrics: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Speaker identification
+# ---------------------------------------------------------------------------
+
+_titanet_model = None
+
+
+def _load_titanet(device: str):
+    """Lazy-load TitaNet once and cache it for the process lifetime."""
+    global _titanet_model
+    if _titanet_model is None:
+        from nemo.collections.asr.models import EncDecSpeakerLabelModel
+        _titanet_model = EncDecSpeakerLabelModel.from_pretrained("titanet_large")
+        _titanet_model.eval()
+    return _titanet_model.to(device)
+
+
+def get_speaker_embedding(wav_path: Path, device: str = "cpu") -> "np.ndarray":
+    """Extract a speaker embedding vector from a 16kHz mono WAV using TitaNet."""
+    import numpy as np
+    import soundfile as sf
+    model = _load_titanet(device)
+    audio, _ = sf.read(str(wav_path))
+    if audio.ndim > 1:
+        audio = audio.mean(axis=1)
+    audio_t = torch.tensor(audio, dtype=torch.float32).unsqueeze(0).to(device)
+    length = torch.tensor([len(audio)]).to(device)
+    with torch.no_grad():
+        _, emb = model(input_signal=audio_t, input_signal_length=length)
+    return emb.cpu().numpy().squeeze()
+
+
+def _build_speaker_clip(
+    audio_path: Path, speaker_segs: list, tmpdir: Path, speaker_id: str, max_sec: float = 30.0
+) -> Optional[Path]:
+    """Extract up to max_sec of audio for one speaker and return path to a WAV clip."""
+    parts: list = []
+    total = 0.0
+    for i, seg in enumerate(speaker_segs):
+        if total >= max_sec:
+            break
+        dur = min(seg["duration"], max_sec - total)
+        part = tmpdir / f"_clip_{speaker_id}_{i}.wav"
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(audio_path),
+             "-ss", str(seg["start"]), "-t", str(dur),
+             "-ar", "16000", "-ac", "1", str(part)],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0 and part.exists():
+            parts.append(part)
+            total += dur
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    lst = tmpdir / f"_list_{speaker_id}.txt"
+    lst.write_text("\n".join(f"file '{p.resolve()}'" for p in parts))
+    out = tmpdir / f"_spk_{speaker_id}.wav"
+    r = subprocess.run(
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+         "-i", str(lst), "-ar", "16000", "-ac", "1", str(out)],
+        capture_output=True, text=True,
+    )
+    return out if r.returncode == 0 else None
+
+
+def identify_speakers(
+    segments: list,
+    audio_path: Path,
+    signatures: dict,
+    threshold: float,
+    tmpdir: Path,
+    device: str = "cpu",
+) -> tuple:
+    """
+    Match diarized speakers to known voice signatures via cosine similarity.
+
+    Args:
+        signatures: {speaker_name: np.ndarray} loaded from GCS .npy files
+        threshold:  cosine similarity threshold (0.0-1.0) for a positive match
+
+    Returns:
+        (updated_segments, unknown_samples)
+        unknown_samples: {original_speaker_id: Path} — 30-sec WAV clip for review
+    """
+    import numpy as np
+    if not signatures:
+        return segments, {}
+
+    speaker_map: dict = {}
+    unknown_samples: dict = {}
+
+    for speaker in {s["speaker"] for s in segments}:
+        spk_segs = [s for s in segments if s["speaker"] == speaker]
+        clip = _build_speaker_clip(audio_path, spk_segs, tmpdir, speaker)
+        if clip is None:
+            continue
+        try:
+            emb = get_speaker_embedding(clip, device)
+        except Exception as e:
+            print(f"  Warning: embedding failed for {speaker}: {e}", file=sys.stderr)
+            continue
+
+        best_name, best_sim = None, -1.0
+        for name, sig in signatures.items():
+            sim = float(np.dot(emb, sig) / (np.linalg.norm(emb) * np.linalg.norm(sig) + 1e-8))
+            if sim > best_sim:
+                best_sim, best_name = sim, name
+
+        if best_sim >= threshold:
+            speaker_map[speaker] = best_name
+            print(f"  Identified: {speaker} → {best_name} (sim={best_sim:.3f})")
+        else:
+            print(f"  Unknown:    {speaker} (best={best_name}, sim={best_sim:.3f})")
+            unknown_samples[speaker] = clip
+
+    updated = [dict(s, speaker=speaker_map.get(s["speaker"], s["speaker"])) for s in segments]
+    return updated, unknown_samples
+
+
+# ---------------------------------------------------------------------------
 # Core single-file processing
 # ---------------------------------------------------------------------------
 

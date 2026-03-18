@@ -5,6 +5,8 @@
     "speakers": null,
     "no_msdd": false,
     "gap": 5,
-    "min_seg": 0.5
+    "min_seg": 0.5,
+    "identify_speakers": true,
+    "similarity_threshold": 0.75
   }
 }
