@@ -1,6 +1,6 @@
 sample_rate: 16000
 batch_size: 64
-num_workers: 1
+num_workers: 4
 verbose: True
 device: null  # null = auto-detect (cuda if available, else cpu)
 

@@ -210,6 +210,10 @@ def process_single(
     # Use absolute path — NeMo's tqdm dataloader can change CWD during processing,
     # which breaks relative paths when reopening subsegment manifest files mid-run.
     cfg.diarizer.out_dir = str(output_dir.resolve())
+    # device: null means auto-detect — explicitly resolve so NeMo moves model to GPU
+    if cfg.device is None:
+        import torch
+        cfg.device = "cuda" if torch.cuda.is_available() else "cpu"
     if num_speakers is not None:
         cfg.diarizer.clustering.parameters.oracle_num_speakers = True
 
